@@ -1,7 +1,10 @@
-# -*- coding: utf-8 -*-
+ # -*- coding: utf-8 -*-
 
 import json
 import boto3
+
+sys.path.append('./modules')
+
 import unidecode
 
 s3_url_base = "https://s3-eu-west-1.amazonaws.com/alexa-name-day-skill/"
@@ -13,7 +16,6 @@ def lambda_handler(event, context):
         raise ValueError("Invalid Application ID")
 
     if event["session"]["new"]:
-        print event["session"]["new"]
         event['session']['attributes'] = {}
         on_session_started({"requestId": event["request"]["requestId"]}, event["session"])
 
@@ -26,9 +28,7 @@ def lambda_handler(event, context):
 
 
 def on_session_started(session_started_request, session):
-    print "Starting new session."
-    print session
-    print session_started_request
+    print("Starting new session.")
 
 
 def launch_message(launch_request, session):
@@ -89,7 +89,7 @@ def handle_session_end_request(session):
 
 
 def session_ended_intent(session_ended_request, session):
-    print "Ending session."
+    print("Ending session.")
     """ end """
 
 
@@ -111,8 +111,6 @@ def name_day_intent(intent, session):
             country = session['attributes']['country']
         else:
             country = intent["slots"]["country"]["value"]
-        print name
-        print country
         card_title = "Found something!"
         should_end_session = True
         found = False
@@ -137,8 +135,6 @@ def name_day_intent(intent, session):
             card_text = nameday_name + " has a name day on the " + nameday_day + " " + nameday_month + "."
             speech_output = "<speak> " + nameday_name + " has a name day on the " + nameday_day + " " + nameday_month + ". </speak>"
 
-        print build_response(session['attributes'], build_speechlet_response(
-            card_title, card_text, speech_output, None, should_end_session, country))
         return build_response(session['attributes'], build_speechlet_response(
             card_title, card_text, speech_output, None, should_end_session, country))
     except:
@@ -148,13 +144,6 @@ def name_day_intent(intent, session):
         speech_output = "I couldn't match that name. " \
                         "Do you want to spell it out?"
         reprompt_text = speech_output
-        print build_response(session['attributes'],
-                             build_speechlet_response_no_card(
-                                                speech_output,
-                                                reprompt_text,
-                                                should_end_session
-                                                )
-                              )
         return build_response(session['attributes'],
                              build_speechlet_response_no_card(
                                                 speech_output,
@@ -169,8 +158,6 @@ def spell_out_name(intent, session):
     speech_output = "<speak> Please spell out the person's " \
                     "name using the English alphabet. </speak>"
     session['attributes']['name_spelt_out'] = True
-    print build_response(session['attributes'], build_elicit_dialog_no_card(
-        speech_output, None, should_end_session))
     return build_response(session['attributes'], build_elicit_dialog_no_card(
         speech_output, None, should_end_session))
 
@@ -182,28 +169,24 @@ def get_json(filename):
         file = boto3.resource('s3').Object('alexa-name-day-skill', "countries/" + filename)
         return json.loads(file.get()['Body'].read())
     except Exception as e:
-        print e
+        print(e)
         raise e
 
 
 def phonetic_me(name):
     """ get jiggy with the IPA """
     for idx, letter in enumerate(name):
-        print letter
         try:
             if letter == unicode("Ž", encoding='utf-8'):
-                print "found one, before: " + name
                 try:
                     name = name[:idx] + '<phoneme alphabet="x-sampa" ph="Z">z</phoneme>' + name[idx+1:]
                 except Exception as e:
-                    print e
+                    print(e)
                     raise e
-                print "found one, after: " + name
             else:
-                print "not found: " + name
                 continue
         except Exception as e:
-            print e
+            print(e)
             raise e
     return name
 
