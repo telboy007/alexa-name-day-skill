@@ -71,7 +71,7 @@ def on_intent(intent_request, session):
         raise ValueError("Invalid intent")
 
 
-# sessin handlers & help
+# session handlers & help
 def get_help_response(session):
     speech_output = "<speak> You can say things like, ask " \
                     "nameday for Marcela in Slovakia or " \
@@ -133,25 +133,29 @@ def name_day_intent(intent, session):
         if found:
             session['attributes']['country'] = intent["slots"]["country"]["value"]
             session['attributes']['name'] = intent["slots"]["name"]["value"]
-            card_text = nameday_name + " has a name day on the " + nameday_day + " " + nameday_month + "."
-            speech_output = "<speak> " + nameday_name + " has a name day on the " + nameday_day + " " + nameday_month + ". </speak>"
-
-        return build_response(session['attributes'], build_speechlet_response(
-            card_title, card_text, speech_output, None, should_end_session, country))
-    except:
-        should_end_session = False
-        session['attributes']['country'] = intent["slots"]["country"]["value"]
-        session['attributes']['no_name_found'] = True
-        speech_output = "I couldn't match that name. " \
-                        "Do you want to spell it out?"
-        reprompt_text = speech_output
-        return build_response(session['attributes'],
-                             build_speechlet_response_no_card(
-                                                speech_output,
-                                                reprompt_text,
-                                                should_end_session
-                                                )
-                              )
+            card_text = (nameday_name + " has a name day on the " + nameday_day 
+                         + " " + nameday_month + ".")
+            speech_output = ("<speak> " + nameday_name + " has a name day on the " 
+                             + nameday_day + " " + nameday_month + ". </speak>")
+            return build_response(session['attributes'], build_speechlet_response(
+                card_title, card_text, speech_output, None, should_end_session, country))
+        else:
+            should_end_session = False
+            session['attributes']['country'] = intent["slots"]["country"]["value"]
+            session['attributes']['no_name_found'] = True
+            speech_output = "I couldn't match that name. " \
+                            "Do you want to spell it out?"
+            reprompt_text = speech_output
+            return build_response(session['attributes'],
+                                build_speechlet_response_no_card(
+                                                    speech_output,
+                                                    reprompt_text,
+                                                    should_end_session
+                                                    )
+                                )
+    except Exception as e:
+        print(e)
+        handle_unhandled(session)
 
 
 def spell_out_name(intent, session):
@@ -171,7 +175,7 @@ def get_json(filename):
         return json.loads(file.get()['Body'].read())
     except Exception as e:
         print(e)
-        raise e
+        handle_unhandled(session)
 
 
 def phonetic_me(name):
@@ -183,12 +187,12 @@ def phonetic_me(name):
                     name = name[:idx] + '<phoneme alphabet="x-sampa" ph="Z">z</phoneme>' + name[idx+1:]
                 except Exception as e:
                     print(e)
-                    raise e
+                    handle_unhandled(session)
             else:
                 continue
         except Exception as e:
             print(e)
-            raise e
+            handle_unhandled(session)
     return name
 
 
