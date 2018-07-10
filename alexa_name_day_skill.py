@@ -3,6 +3,7 @@
 import sys
 import json
 import boto3
+from difflib import SequenceMatcher
 
 sys.path.append('./modules')
 
@@ -12,12 +13,8 @@ s3_url_base = "https://s3-eu-west-1.amazonaws.com/alexa-name-day-skill/"
 
 
 def lambda_handler(event, context):
-    if (event["session"]["application"]["applicationId"] !=
-            "amzn1.ask.skill.80edc7f5-85ab-4021-96dc-f94cca32fb42"):
-        raise ValueError("Invalid Application ID")
-
     if event["session"]["new"]:
-        event['session']['attributes'] = {}
+        event["session"]["attributes"] = {}
         on_session_started({"requestId": event["request"]["requestId"]}, event["session"])
 
     if event["request"]["type"] == "LaunchRequest":
@@ -37,7 +34,7 @@ def launch_message(launch_request, session):
                     "Ask me for someone's name day, this can be " \
                     "from any of the name day calendars I know. </speak>"
     reprompt_text = "<speak> Please ask me for someone's name day, for " \
-                    "example say.  Name day of Marcela in Slovakia. </speak>"
+                    "example say.  Name day of Marcela from Slovakia. </speak>"
     should_end_session = False
     return build_response(session['attributes'], build_speechlet_response_no_card(
         speech_output, reprompt_text, should_end_session))
@@ -47,20 +44,8 @@ def on_intent(intent_request, session):
     intent = intent_request["intent"]
     intent_name = intent_request["intent"]["name"]
 
-    # handle yes/no intent after the user has been prompted
-    if session.get('attributes', {}).get('no_name_found'):
-        del session['attributes']['no_name_found']
-        intent_name == "SpellNameIntent"
-
-    # handle spell name intent after the user has been prompted
-    if session.get('attributes', {}).get('name_spelt_out'):
-        del session['attributes']['name_spelt_out']
-        intent_name == "NameDayIntent"
-
     if intent_name == "NameDayIntent":
         return name_day_intent(intent, session)
-    elif intent_name == "SpellNameIntent":
-        return spell_out_name(intent, session)
     elif intent_name == "AMAZON.HelpIntent":
         return get_help_response(session)
     elif intent_name == "AMAZON.CancelIntent" or intent_name == "AMAZON.StopIntent":
@@ -71,20 +56,20 @@ def on_intent(intent_request, session):
         raise ValueError("Invalid intent")
 
 
-# session handlers & help
+# sessin handlers & help
 def get_help_response(session):
     speech_output = "<speak> You can say things like, ask " \
                     "nameday for Marcela in Slovakia or " \
                     "ask nameday for name day of " \
-                    "Marcela in Slovakia. </speak>"
+                    "Marcela from Slovakia. </speak>"
     should_end_session = False
     return build_response(session['attributes'], build_speechlet_response_no_card(
         speech_output, None, should_end_session))
 
 
 def handle_session_end_request(session):
-    speech_output = "<speak> Thank you for using the Name Day skill.  Ciao! </speak>"
     should_end_session = True
+    speech_output = "<speak> Thank you for using the Name Day skill.  Ciao! </speak>"
     return build_response(session['attributes'], build_speechlet_response_no_card(
         speech_output, None, should_end_session))
 
@@ -112,8 +97,6 @@ def name_day_intent(intent, session):
             country = session['attributes']['country']
         else:
             country = intent["slots"]["country"]["value"]
-        card_title = "Found something!"
-        should_end_session = True
         found = False
         json_data = get_json(country + ".json")
         for month in json_data:
@@ -122,52 +105,62 @@ def name_day_intent(intent, session):
                     names = dataset.get(day)
                     names_split = names.split(',')
                     for split in names_split:
-                        if name == unidecode.unidecode(split):
-                            nameday_name = phonetic_me(split)
-                            nameday_day = day
-                            nameday_month = month
-                            # time for some hacky tastic stuff
-                            if split == "Marcella":
-                                nameday_name = "Marcela"
-                            found = True
-        if found:
-            session['attributes']['country'] = intent["slots"]["country"]["value"]
-            session['attributes']['name'] = intent["slots"]["name"]["value"]
-            card_text = (nameday_name + " has a name day on the " + nameday_day 
-                         + " " + nameday_month + ".")
-            speech_output = ("<speak> " + nameday_name + " has a name day on the " 
-                             + nameday_day + " " + nameday_month + ". </speak>")
-            return build_response(session['attributes'], build_speechlet_response(
-                card_title, card_text, speech_output, None, should_end_session, country))
-        else:
-            should_end_session = False
-            session['attributes']['country'] = intent["slots"]["country"]["value"]
-            session['attributes']['no_name_found'] = True
-            speech_output = "I couldn't match that name. " \
-                            "Do you want to spell it out?"
-            reprompt_text = speech_output
-            return build_response(session['attributes'],
-                                build_speechlet_response_no_card(
-                                                    speech_output,
-                                                    reprompt_text,
-                                                    should_end_session
-                                                    )
-                                )
-    except Exception as e:
-        print(e)
-        handle_unhandled(session)
-
-
-def spell_out_name(intent, session):
-    should_end_session = False
-    speech_output = "<speak> Please spell out the person's " \
-                    "name using the English alphabet. </speak>"
-    session['attributes']['name_spelt_out'] = True
-    return build_response(session['attributes'], build_elicit_dialog_no_card(
-        speech_output, None, should_end_session))
+                        found, nameday_name = check_name(name, unidecode.unidecode(split))
+                        if found:
+                            print("Alexa heard: ", name, " & ", country, " | Script created: ", nameday_name, " | Date: ", day, " ", month)
+                            card_title = "Found something!"
+                            should_end_session = True
+                            session['attributes']['country'] = intent["slots"]["country"]["value"]
+                            session['attributes']['name'] = intent["slots"]["name"]["value"]
+                            card_text = nameday_name + " has a name day on the " + day + " " + month + "."
+                            speech_output = "<speak> " + nameday_name + " has a name day on the " + day + " " + month + ". </speak>"
+                
+                            return build_response(session['attributes'], build_speechlet_response(
+                                card_title, card_text, speech_output, None, should_end_session, country))
+                    for split in names_split:
+                        found, nameday_name = check_similar(name, unidecode.unidecode(split))
+                        if found:
+                            print("Alexa heard: ", name, " & ", country, " | Script created: ", nameday_name, " | Date: ", day, " ", month)
+                            card_title = "Found something!"
+                            should_end_session = True
+                            session['attributes']['country'] = intent["slots"]["country"]["value"]
+                            session['attributes']['name'] = intent["slots"]["name"]["value"]
+                            card_text = nameday_name + " has a name day on the " + day + " " + month + "."
+                            speech_output = "<speak> " + nameday_name + " has a name day on the " + day + " " + month + ". </speak>"
+                
+                            return build_response(session['attributes'], build_speechlet_response(
+                                card_title, card_text, speech_output, None, should_end_session, country))
+    except:
+        should_end_session = True
+        country = intent["slots"]["country"]["value"]
+        speech_output = "<speak>Sorry I'm having trouble recognising that name, " \
+                        "I'm learning all the time so please try again later.</speak>"
+        return build_response(session['attributes'], build_elicit_dialog_no_card(
+            speech_output, None, should_end_session, country))
 
 
 # utility functions
+def check_name(name1, name2):
+    if name1 == name2:
+        nameday_name = name1.replace("ll", "l")
+        found = True
+        return found, nameday_name
+    else:
+        found=False
+        nameday_name=""
+        return found, nameday_name
+
+def check_similar(name1, name2):
+    if similar(name1, name2) > 0.8:
+        nameday_name = name1.replace("ll", "l")
+        found = True
+        return found, nameday_name
+    else:
+        found=False
+        nameday_name=""
+        return found, nameday_name
+        
+    
 def get_json(filename):
     try:
         # return json.load(open(filename))
@@ -175,25 +168,34 @@ def get_json(filename):
         return json.loads(file.get()['Body'].read())
     except Exception as e:
         print(e)
-        handle_unhandled(session)
+        raise e
 
 
 def phonetic_me(name):
     """ get jiggy with the IPA """
-    for idx, letter in enumerate(name):
+    new_name = []
+    for letter in list(name):
         try:
             if letter == unicode("Ž", encoding='utf-8'):
-                try:
-                    name = name[:idx] + '<phoneme alphabet="x-sampa" ph="Z">z</phoneme>' + name[idx+1:]
-                except Exception as e:
-                    print(e)
-                    handle_unhandled(session)
+                letter = '<phoneme alphabet="x-sampa" ph="Z">z</phoneme>'
+            elif letter == "j":
+                letter = '<phoneme alphabet="x-sampa" ph="j">j</phoneme>'
+            elif letter == "o":
+                letter = '<phoneme alphabet="x-sampa" ph="OI">o</phoneme>'
+            # elif letter == "a":
+            #     letter = '<phoneme alphabet="x-sampa" ph="@">a</phoneme>'
             else:
-                continue
+                letter = letter
         except Exception as e:
             print(e)
-            handle_unhandled(session)
-    return name
+            raise e
+        new_name.append(letter)
+    ipa_name = "".join(new_name)
+    return ipa_name
+
+
+def similar(a, b):
+    return SequenceMatcher(None, a, b).ratio()
 
 
 # JSON Responses
@@ -238,12 +240,18 @@ def build_speechlet_response_no_card(speech_output, reprompt_text, should_end_se
     }
 
 
-def build_elicit_dialog_no_card(speech_output, reprompt_text, should_end_session):
+def build_elicit_dialog_no_card(speech_output, reprompt_text, should_end_session, country):
     return {
         "outputSpeech": {
             "type": "SSML",
             "ssml": speech_output
-            },
+        },
+        "reprompt": {
+            "outputSpeech": {
+                "type": "SSML",
+                "ssml": reprompt_text
+            }
+        },
         "shouldEndSession": should_end_session,
         "directives": [
             {
@@ -256,6 +264,10 @@ def build_elicit_dialog_no_card(speech_output, reprompt_text, should_end_session
                         "name": {
                             "name": "name",
                             "confirmationStatus": "NONE"
+                        },
+                        "country": {
+                            "name": "country",
+                            "value": country
                         }
                     }
                 }
